@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { cloneElement, Component, createElement, CSSProperties } from 'react';
+import { cloneElement, Component, createElement, CSSProperties, isValidElement, Ref } from 'react';
+import composeRefs from '@seznam/compose-react-refs';
 import raf, { cancel as caf } from 'raf';
 import css from 'dom-css';
 //
@@ -660,6 +661,14 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
 
     const mergedClasses = getFinalClasses(this.props);
 
+    const viewEl = renderView({
+      style: viewStyle,
+      className: mergedClasses.view,
+    });
+
+    // @ts-expect-error: Reading React private property "ref"
+    const viewElRef: Ref<HTMLElement> | undefined = isValidElement(viewEl) ? viewEl.ref : undefined;
+
     return createElement(
       tagName,
       {
@@ -672,15 +681,12 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
       },
       [
         cloneElement(
-          renderView({
-            style: viewStyle,
-            className: mergedClasses.view,
-          }),
+          viewEl,
           {
             key: 'view',
-            ref: (ref) => {
-              this.view = ref;
-            },
+            ref: composeRefs(viewElRef, (ref) => {
+              this.view = ref!;
+            }),
           },
           children,
         ),

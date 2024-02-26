@@ -1,3 +1,4 @@
+import { createRef } from 'react';
 import { Scrollbars } from 'react-custom-scrollbars';
 import { render, unmountComponentAtNode, findDOMNode } from 'react-dom';
 
@@ -100,6 +101,25 @@ export default function createTests(scrollbarWidth) {
               expect(this.view.tagName).toEqual('SECTION');
               expect(this.view.style.color).toEqual('red');
               expect(this.view.style.position).toEqual('absolute');
+              done();
+            },
+          );
+        });
+
+        it('should respect the ref passed in', (done) => {
+          const ref = createRef(undefined);
+          render(
+            <Scrollbars
+              style={{ width: 100, height: 100 }}
+              renderView={({ style, ...props }) => (
+                <section ref={ref} style={{ ...style, color: 'red' }} {...props} />
+              )}
+            >
+              <div style={{ width: 200, height: 200 }} />
+            </Scrollbars>,
+            node,
+            function callback() {
+              expect(ref.current).not.toBeUndefined();
               done();
             },
           );
