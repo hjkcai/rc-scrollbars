@@ -495,16 +495,12 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
     }, 100);
   }
 
-  raf(callback) {
-    if (this.requestFrame) raf.cancel(this.requestFrame);
+  update(callback?: (values: ScrollValues) => void) {
+    if (this.requestFrame) return;
     this.requestFrame = raf(() => {
       this.requestFrame = undefined;
-      callback();
+      this._update(callback);
     });
-  }
-
-  update(callback?: (values: ScrollValues) => void) {
-    this.raf(() => this._update(callback));
   }
 
   _update(callback) {
@@ -565,15 +561,7 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
       autoHeightMin,
       autoHide,
       autoHideDuration,
-      autoHideTimeout,
       children,
-      classes,
-      hideTracksWhenNotNeeded,
-      onScroll,
-      onScrollFrame,
-      onScrollStart,
-      onScrollStop,
-      onUpdate,
       renderThumbHorizontal,
       renderThumbVertical,
       renderTrackHorizontal,
@@ -581,11 +569,8 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
       renderView,
       style,
       tagName,
-      thumbMinSize,
-      thumbSize,
       universal,
-      disableDefaultStyles,
-      ...props
+      id,
     } = this.props;
     /* eslint-enable no-unused-vars */
 
@@ -600,43 +585,49 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
       viewStyleUniversalInitial,
     } = this.styles;
 
-    const containerStyle = {
-      ...containerStyleDefault,
-      ...(autoHeight && {
-        ...containerStyleAutoHeight,
-        minHeight: autoHeightMin,
-        maxHeight: autoHeightMax,
-      }),
-      ...style,
-    };
+    const containerStyle = (() => {
+      const result = { ...containerStyleDefault };
+      if (autoHeight) {
+        Object.assign(result, containerStyleAutoHeight);
+        result.minHeight = autoHeightMin;
+        result.maxHeight = autoHeightMax;
+      }
 
-    const viewStyle = {
-      ...viewStyleDefault,
-      // Hide scrollbars by setting a negative margin
-      marginRight: scrollbarWidth ? -scrollbarWidth : 0,
-      marginBottom: scrollbarWidth ? -scrollbarWidth : 0,
-      ...(autoHeight && {
-        ...viewStyleAutoHeight,
-        // Add scrollbarWidth to autoHeight in order to compensate negative margins
-        minHeight:
-          typeof autoHeightMin === 'string'
-            ? `calc(${autoHeightMin} + ${scrollbarWidth}px)`
-            : autoHeightMin + scrollbarWidth,
-        maxHeight:
-          typeof autoHeightMax === 'string'
-            ? `calc(${autoHeightMax} + ${scrollbarWidth}px)`
-            : autoHeightMax + scrollbarWidth,
-      }),
-      // Override min/max height for initial universal rendering
-      ...(autoHeight &&
-        universal &&
-        !didMountUniversal && {
-          minHeight: autoHeightMin,
-          maxHeight: autoHeightMax,
-        }),
-      // Override
-      ...(universal && !didMountUniversal && viewStyleUniversalInitial),
-    };
+      return Object.assign(result, style);
+    })();
+
+    const viewStyle = (() => {
+      const result = {
+        ...viewStyleDefault,
+        // Hide scrollbars by setting a negative margin
+        marginRight: scrollbarWidth ? -scrollbarWidth : 0,
+        marginBottom: scrollbarWidth ? -scrollbarWidth : 0,
+      };
+
+      if (autoHeight) {
+        Object.assign(result, viewStyleAutoHeight);
+
+        if (universal && !didMountUniversal) {
+          // Override min/max height for initial universal rendering
+          result.minHeight = autoHeightMin;
+          result.maxHeight = autoHeightMax;
+        } else {
+          // Add scrollbarWidth to autoHeight in order to compensate negative margins
+          result.minHeight =
+            typeof autoHeightMin === 'string'
+              ? `calc(${autoHeightMin} + ${scrollbarWidth}px)`
+              : autoHeightMin + scrollbarWidth;
+          result.maxHeight =
+            typeof autoHeightMax === 'string'
+              ? `calc(${autoHeightMax} + ${scrollbarWidth}px)`
+              : autoHeightMax + scrollbarWidth;
+        }
+      }
+
+      return universal && !didMountUniversal
+        ? Object.assign(result, viewStyleUniversalInitial) // Override
+        : result;
+    })();
 
     const trackAutoHeightStyle = {
       transition: `opacity ${autoHideDuration}ms`,
@@ -672,7 +663,7 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
     return createElement(
       tagName,
       {
-        ...props,
+        id,
         className: mergedClasses.root,
         style: containerStyle,
         ref: (ref) => {
