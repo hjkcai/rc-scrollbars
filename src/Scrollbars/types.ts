@@ -65,8 +65,10 @@ export type StyleKeys =
   | 'disableSelectStyleReset';
 
 export interface CustomRenderProps extends HTMLAttributes<HTMLDivElement> {
-  style: CSSProperties;
-  className: string;
+  ref: React.Ref<HTMLDivElement>;
+  style?: CSSProperties;
+  className?: string;
+  children?: React.ReactNode;
 }
 
 export interface CustomRenderer {

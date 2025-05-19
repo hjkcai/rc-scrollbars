@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { cloneElement, Component, createElement, CSSProperties, isValidElement, Ref } from 'react';
-import composeRefs from '@seznam/compose-react-refs';
+import { Component, CSSProperties } from 'react';
 import raf, { cancel as caf } from 'raf';
 import css from 'dom-css';
 //
@@ -39,7 +38,10 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
   view?: HTMLElement;
   viewScrollLeft?: number;
   viewScrollTop?: number;
+  mutationOb = new MutationObserver(() => this.update());
+  updateCallbacks: Array<(values: ScrollValues) => void> = [];
 
+  static displayName = 'Scrollbars';
   static defaultProps = {
     autoHeight: false,
     autoHeightMax: 200,
@@ -89,6 +91,8 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
     this.handleVerticalTrackMouseDown = this.handleVerticalTrackMouseDown.bind(this);
     this.handleHorizontalThumbMouseDown = this.handleHorizontalThumbMouseDown.bind(this);
     this.handleVerticalThumbMouseDown = this.handleVerticalThumbMouseDown.bind(this);
+    this.handleHorizontalTrackWheel = this.handleHorizontalTrackWheel.bind(this);
+    this.handleVerticalTrackWheel = this.handleVerticalTrackWheel.bind(this);
     this.handleWindowResize = this.handleWindowResize.bind(this);
     this.handleScroll = this.handleScroll.bind(this);
     this.handleDrag = this.handleDrag.bind(this);
@@ -274,7 +278,10 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
     trackVertical.addEventListener('mousedown', this.handleVerticalTrackMouseDown);
     thumbHorizontal.addEventListener('mousedown', this.handleHorizontalThumbMouseDown);
     thumbVertical.addEventListener('mousedown', this.handleVerticalThumbMouseDown);
+    trackHorizontal.addEventListener('wheel', this.handleHorizontalTrackWheel);
+    trackVertical.addEventListener('wheel', this.handleVerticalTrackWheel);
     window.addEventListener('resize', this.handleWindowResize);
+    this.mutationOb.observe(view, { attributes: true, childList: true, subtree: true });
   }
 
   removeListeners() {
@@ -301,9 +308,12 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
     trackVertical.removeEventListener('mousedown', this.handleVerticalTrackMouseDown);
     thumbHorizontal.removeEventListener('mousedown', this.handleHorizontalThumbMouseDown);
     thumbVertical.removeEventListener('mousedown', this.handleVerticalThumbMouseDown);
+    trackHorizontal.removeEventListener('wheel', this.handleHorizontalTrackWheel);
+    trackVertical.removeEventListener('wheel', this.handleVerticalTrackWheel);
     window.removeEventListener('resize', this.handleWindowResize);
     // Possibly setup by `handleDragStart`
     this.teardownDragging();
+    this.mutationOb.disconnect();
   }
 
   handleScroll(event) {
@@ -354,6 +364,12 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
     const thumbWidth = this.getThumbHorizontalWidth();
     const offset = Math.abs(targetLeft - clientX) - thumbWidth / 2;
     this.view.scrollLeft = this.getScrollLeftForOffset(offset);
+
+    this.update(() => {
+      this.handleDragStart(event);
+      const { left, width } = this.thumbHorizontal!.getBoundingClientRect();
+      this.prevPageY = width - (event.clientX - left);
+    });
   }
 
   handleVerticalTrackMouseDown(event) {
@@ -364,6 +380,12 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
     const thumbHeight = this.getThumbVerticalHeight();
     const offset = Math.abs(targetTop - clientY) - thumbHeight / 2;
     this.view.scrollTop = this.getScrollTopForOffset(offset);
+
+    this.update(() => {
+      this.handleDragStart(event);
+      const { top, height } = this.thumbVertical!.getBoundingClientRect();
+      this.prevPageY = height - (event.clientY - top);
+    });
   }
 
   handleHorizontalThumbMouseDown(event) {
@@ -382,6 +404,16 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
     const { offsetHeight } = target;
     const { top } = target.getBoundingClientRect();
     this.prevPageY = offsetHeight - (clientY - top);
+  }
+
+  handleHorizontalTrackWheel(e: WheelEvent) {
+    e.preventDefault();
+    this.scrollLeft(this.getScrollLeft() + e.deltaX);
+  }
+
+  handleVerticalTrackWheel(e: WheelEvent) {
+    e.preventDefault();
+    this.scrollTop(this.getScrollTop() + e.deltaY);
   }
 
   setupDragging() {
@@ -460,9 +492,16 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
   }
 
   showTracks() {
-    clearTimeout(this.hideTracksTimeout);
-    css(this.trackHorizontal, { opacity: 1 });
-    css(this.trackVertical, { opacity: 1 });
+    if (this.hideTracksTimeout) {
+      clearTimeout(this.hideTracksTimeout);
+      this.hideTracksTimeout = undefined;
+    }
+    if (this.trackHorizontal && this.trackHorizontal.style.opacity !== '1') {
+      this.trackHorizontal.style.opacity = '1';
+    }
+    if (this.trackVertical && this.trackVertical.style.opacity !== '1') {
+      this.trackVertical.style.opacity = '1';
+    }
   }
 
   hideTracks() {
@@ -470,10 +509,14 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
     if (this.scrolling) return;
     if (this.trackMouseOver) return;
     const { autoHideTimeout } = this.props;
-    clearTimeout(this.hideTracksTimeout);
+    if (this.hideTracksTimeout) clearTimeout(this.hideTracksTimeout);
     this.hideTracksTimeout = setTimeout(() => {
-      css(this.trackHorizontal, { opacity: 0 });
-      css(this.trackVertical, { opacity: 0 });
+      if (this.trackHorizontal && this.trackHorizontal.style.opacity !== '0') {
+        this.trackHorizontal.style.opacity = '0';
+      }
+      if (this.trackVertical && this.trackVertical.style.opacity !== '0') {
+        this.trackVertical.style.opacity = '0';
+      }
     }, autoHideTimeout);
   }
 
@@ -497,13 +540,14 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
 
   update(callback?: (values: ScrollValues) => void) {
     if (this.requestFrame) return;
+    if (typeof callback === 'function') this.updateCallbacks.push(callback);
     this.requestFrame = raf(() => {
       this.requestFrame = undefined;
-      this._update(callback);
+      this._update();
     });
   }
 
-  _update(callback) {
+  _update() {
     const { onUpdate, hideTracksWhenNotNeeded } = this.props;
     const values = this.getValues();
 
@@ -546,21 +590,25 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
       css(this.thumbHorizontal, thumbHorizontalStyle);
       css(this.thumbVertical, thumbVerticalStyle);
     }
+
     if (onUpdate) onUpdate(values);
-    if (typeof callback !== 'function') return;
-    callback(values);
+
+    if (this.updateCallbacks.length > 0) {
+      for (let i = 0; i < this.updateCallbacks.length; i++) {
+        this.updateCallbacks[i](values);
+      }
+
+      this.updateCallbacks = [];
+    }
   }
 
   render() {
     const { scrollbarWidth, didMountUniversal } = this.state;
 
-    /* eslint-disable no-unused-vars */
     const {
       autoHeight,
       autoHeightMax,
       autoHeightMin,
-      autoHide,
-      autoHideDuration,
       children,
       renderThumbHorizontal,
       renderThumbVertical,
@@ -572,14 +620,12 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
       universal,
       id,
     } = this.props;
-    /* eslint-enable no-unused-vars */
+
+    const Tag = tagName as 'div';
 
     const {
       containerStyleAutoHeight,
       containerStyleDefault,
-      thumbStyleDefault,
-      trackHorizontalStyleDefault,
-      trackVerticalStyleDefault,
       viewStyleAutoHeight,
       viewStyleDefault,
       viewStyleUniversalInitial,
@@ -629,105 +675,59 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
         : result;
     })();
 
-    const trackAutoHeightStyle = {
-      transition: `opacity ${autoHideDuration}ms`,
-      opacity: 0,
-    };
-
-    const trackHorizontalStyle = {
-      ...trackHorizontalStyleDefault,
-      ...(autoHide && trackAutoHeightStyle),
-      ...((!scrollbarWidth || (universal && !didMountUniversal)) && {
+    let trackStyle: React.CSSProperties | undefined;
+    if (!scrollbarWidth || (universal && !didMountUniversal)) {
+      trackStyle = {
         display: 'none',
-      }),
-    };
-
-    const trackVerticalStyle = {
-      ...trackVerticalStyleDefault,
-      ...(autoHide && trackAutoHeightStyle),
-      ...((!scrollbarWidth || (universal && !didMountUniversal)) && {
-        display: 'none',
-      }),
-    };
+      };
+    }
 
     const mergedClasses = getFinalClasses(this.props);
 
-    const viewEl = renderView({
-      style: viewStyle,
-      className: mergedClasses.view,
-    });
-
-    // @ts-expect-error: Reading React private property "ref"
-    const viewElRef: Ref<HTMLElement> | undefined = isValidElement(viewEl) ? viewEl.ref : undefined;
-
-    return createElement(
-      tagName,
-      {
-        id,
-        className: mergedClasses.root,
-        style: containerStyle,
-        ref: (ref) => {
+    return (
+      <Tag
+        ref={(ref) => {
           this.container = ref;
-        },
-      },
-      [
-        cloneElement(
-          viewEl,
-          {
-            key: 'view',
-            ref: composeRefs(viewElRef, (ref) => {
-              this.view = ref!;
-            }),
+        }}
+        id={id}
+        className={mergedClasses.root}
+        style={containerStyle}
+      >
+        {renderView({
+          ref: (ref) => {
+            this.view = ref!;
           },
+          style: viewStyle,
+          className: mergedClasses.view,
           children,
-        ),
-        cloneElement(
-          renderTrackHorizontal({
-            style: trackHorizontalStyle,
-            className: mergedClasses.trackHorizontal,
-          }),
-          {
-            key: 'trackHorizontal',
-            ref: (ref) => {
-              this.trackHorizontal = ref;
-            },
+        })}
+        {renderTrackHorizontal({
+          ref: (ref) => {
+            this.trackHorizontal = ref!;
           },
-          cloneElement(
-            renderThumbHorizontal({
-              style: thumbStyleDefault,
-              className: mergedClasses.thumbHorizontal,
-            }),
-            {
-              ref: (ref) => {
-                this.thumbHorizontal = ref;
-              },
-            },
-          ),
-        ),
-        cloneElement(
-          renderTrackVertical({
-            style: trackVerticalStyle,
-            className: mergedClasses.trackVertical,
-          }),
-          {
-            key: 'trackVertical',
+          className: mergedClasses.trackHorizontal,
+          style: trackStyle,
+          children: renderThumbHorizontal({
             ref: (ref) => {
-              this.trackVertical = ref;
+              this.thumbHorizontal = ref!;
             },
+            className: mergedClasses.thumbHorizontal,
+          }),
+        })}
+        {renderTrackVertical({
+          ref: (ref) => {
+            this.trackVertical = ref!;
           },
-          cloneElement(
-            renderThumbVertical({
-              style: thumbStyleDefault,
-              className: mergedClasses.thumbVertical,
-            }),
-            {
-              ref: (ref) => {
-                this.thumbVertical = ref;
-              },
+          className: mergedClasses.trackVertical,
+          style: trackStyle,
+          children: renderThumbVertical({
+            ref: (ref) => {
+              this.thumbVertical = ref!;
             },
-          ),
-        ),
-      ],
+            className: mergedClasses.thumbVertical,
+          }),
+        })}
+      </Tag>
     );
   }
 }
