@@ -1,7 +1,5 @@
 import * as React from 'react';
 import { Component, CSSProperties } from 'react';
-import raf, { cancel as caf } from 'raf';
-import css from 'dom-css';
 //
 import { ScrollValues, ScrollbarsProps, StyleKeys } from './types';
 import {
@@ -123,7 +121,7 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
 
   componentWillUnmount() {
     this.removeListeners();
-    this.requestFrame && caf(this.requestFrame);
+    this.requestFrame && cancelAnimationFrame(this.requestFrame);
     clearTimeout(this.hideTracksTimeout);
     clearInterval(this.detectScrollingInterval);
   }
@@ -417,14 +415,14 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
   }
 
   setupDragging() {
-    css(document.body, this.styles.disableSelectStyle);
+    document.body.style.userSelect = 'none';
     document.addEventListener('mousemove', this.handleDrag);
     document.addEventListener('mouseup', this.handleDragEnd);
     document.onselectstart = returnFalse;
   }
 
   teardownDragging() {
-    css(document.body, this.styles.disableSelectStyleReset);
+    document.body.style.userSelect = 'auto';
     document.removeEventListener('mousemove', this.handleDrag);
     document.removeEventListener('mouseup', this.handleDragEnd);
     document.onselectstart = null;
@@ -541,7 +539,7 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
   update(callback?: (values: ScrollValues) => void) {
     if (this.requestFrame) return;
     if (typeof callback === 'function') this.updateCallbacks.push(callback);
-    this.requestFrame = raf(() => {
+    this.requestFrame = requestAnimationFrame(() => {
       this.requestFrame = undefined;
       this._update();
     });
@@ -564,31 +562,34 @@ export class Scrollbars extends Component<ScrollbarsProps, State> {
       const thumbHorizontalWidth = this.getThumbHorizontalWidth();
       const thumbHorizontalX =
         (scrollLeft / (scrollWidth - clientWidth)) * (trackHorizontalWidth - thumbHorizontalWidth);
-      const thumbHorizontalStyle = {
-        width: thumbHorizontalWidth,
-        transform: `translateX(${thumbHorizontalX}px)`,
-      };
       const { scrollTop, clientHeight, scrollHeight } = values;
       const trackVerticalHeight = getInnerHeight(this.trackVertical);
       const thumbVerticalHeight = this.getThumbVerticalHeight();
       const thumbVerticalY =
         (scrollTop / (scrollHeight - clientHeight)) * (trackVerticalHeight - thumbVerticalHeight);
-      const thumbVerticalStyle = {
-        height: thumbVerticalHeight,
-        transform: `translateY(${thumbVerticalY}px)`,
-      };
+
       if (hideTracksWhenNotNeeded) {
-        const trackHorizontalStyle = {
-          visibility: scrollWidth > clientWidth ? 'visible' : 'hidden',
-        };
-        const trackVerticalStyle = {
-          visibility: scrollHeight > clientHeight ? 'visible' : 'hidden',
-        };
-        css(this.trackHorizontal, trackHorizontalStyle);
-        css(this.trackVertical, trackVerticalStyle);
+        if (this.trackHorizontal) {
+          this.trackHorizontal.style.visibility = scrollWidth > clientWidth ? 'visible' : 'hidden';
+        }
+        if (this.trackVertical) {
+          this.trackVertical.style.visibility = scrollHeight > clientHeight ? 'visible' : 'hidden';
+        }
       }
-      css(this.thumbHorizontal, thumbHorizontalStyle);
-      css(this.thumbVertical, thumbVerticalStyle);
+
+      if (this.thumbHorizontal) {
+        Object.assign(this.thumbHorizontal.style, {
+          width: `${thumbHorizontalWidth}px`,
+          transform: `translateX(${thumbHorizontalX}px)`,
+        });
+      }
+
+      if (this.thumbVertical) {
+        Object.assign(this.thumbVertical.style, {
+          height: `${thumbVerticalHeight}px`,
+          transform: `translateY(${thumbVerticalY}px)`,
+        });
+      }
     }
 
     if (onUpdate) onUpdate(values);

@@ -1,5 +1,3 @@
-import css from 'dom-css';
-
 let scrollbarWidth: number | undefined = undefined;
 let pxRatio: number = getPxRatio();
 
@@ -29,13 +27,12 @@ export default function getScrollbarWidth() {
 function getScrollbarWidthFromDom() {
   const div = document.createElement('div');
 
-  css(div, {
-    width: 100,
-    height: 100,
+  Object.assign(div.style, {
+    width: '100px',
+    height: '100px',
     position: 'absolute',
-    top: -9999,
+    top: '-9999',
     overflow: 'scroll',
-    MsOverflowStyle: 'scrollbar',
   });
 
   document.body.appendChild(div);
